@@ -1,3 +1,9 @@
+#fix ZSH -  perform field splitting - http://zsh.sourceforge.net/Doc/Release/Options.html
+if [ -n "$ZSH_VERSION" ]
+then
+    setopt SH_WORD_SPLIT
+fi
+
 # helper functions
 alias _inline_fzf="fzf --multi --ansi -i -1 --height=50% --reverse -0 --header-lines=1 --inline-info --border"
 alias _inline_fzf_nh="fzf --multi --ansi -i -1 --height=50% --reverse -0 --inline-info --border"
@@ -12,6 +18,9 @@ _isClusterSpaceObject() {
 # [k] like g for git but 233% as effective!
 alias k="kubectl"
 
+# [kw] kw get po,svc,md
+alias kw="watch kubectl get"
+
 # [ka] get all pods in namespace
 alias ka="kubectl get pods"
 
@@ -24,7 +33,7 @@ alias kwa="watch kubectl get pods"
 # [kwall] watch all pods in cluster
 alias kwall="watch kubectl get pods --all-namespaces"
 
-# TODO check if this works for macs
+# TODO use "open" instead of "xdg-open" on a mac - also redirect xdg-open std{out,err} to /dev/null
 # [kp] open kubernetes dashboard with proxy
 alias kp="xdg-open 'http://localhost:8001/api/v1/namespaces/kube-system/services/https:kubernetes-dashboard:/proxy/' & kubectl proxy"
 
@@ -39,9 +48,19 @@ kwatch() {
     fi
 }
 
-# [kdebug] start debugging container (nicolaka/netshoot) in the current namespace
-kdebug() {
-    kubectl run --generator=run-pod/v1 kdebug-$RANDOM --rm -i --tty --image nicolaka/netshoot -- /bin/bash
+# [kcmd] create a pod and execute a cmd/image (default bash/ubuntu) usage: "kcmd cmd" or "kcmd cmd image"
+kcmd() {
+    local cmd="$1"
+    local image="ubuntu"
+    if [ -n "$2" ]; then
+        image="$2"
+    fi
+    local ns="$(kubectl get ns | _inline_fzf | awk '{print $1}')"
+    if [ -n "$cmd" ]; then
+        kubectl run shell-$RANDOM --namespace $ns --rm -i --tty --image ${image} -- /bin/sh -c "${cmd}"
+    else
+        kubectl run shell-$RANDOM --namespace $ns --rm -i --tty --image ${image} -- bash
+    fi
 }
 
 # [kube_ctx_name] get the current context
@@ -145,7 +164,6 @@ kfor() {
     [ -z "$port" ] && printf "kfor: missing argument.\nUsage: kfor PORT_TO_FORWARD\n" && return 255
     local arg_pair="$(kubectl get po --all-namespaces | _inline_fzf | awk '{print $1, $2}')"
     [ -z "$arg_pair" ] && printf "kfor: no pods found. no forwarding.\n" && return
-    echo "kubectl port-forward -n $arg_pair $port"
     kubectl port-forward -n $arg_pair "$port"
 }
 
@@ -202,11 +220,6 @@ ktree() {
     fi
 }
 
-# [kbash] create a pod (ubuntu) with a bash
-kbash() {
-    kubectl run --generator=run-pod/v1 kbash-$RANDOM --rm -i --tty --image ubuntu -- bash
-}
-
 # [konsole] create root shell (alpine) on a node
 konsole() {
     local node_hostname="$(kubectl get node --label-columns=kubernetes.io/hostname | _inline_fzf | awk '{print $6}')"
@@ -245,7 +258,25 @@ konsole() {
     }
 }
 '
-    kubectl run --generator=run-pod/v1 $name --namespace $ns --rm -it --image alpine --overrides="${overrides}"
+    kubectl run $name --namespace $ns --rm -it --image alpine --overrides="${overrides}"
+}
+
+# [ksec] decode a value from a secret
+ksec () {
+    ns=$(kubectl get ns | _inline_fzf | awk '{print $1}')
+    local secret=$(kubectl get secret -n "$ns" | _inline_fzf | awk '{print $1}')
+    local key=$(kubectl get secret -n "$ns" "$secret" -o json | jq -r '.data | to_entries[] | "\(.key)"' | _inline_fzf_nh)
+    kubectl view-secret -n "$ns" "$secret" "$key"
+}
+
+# [kinstall] Install the required kubectl plugins
+kinstall() {
+    kubectl krew install tree
+    kubectl krew install view-secret
+}
+# [kupdate] Updates kubectl plugins
+kupdate() {
+    kubectl krew upgrade
 }
 
 # [khelp] show this help message
@@ -264,22 +295,16 @@ khelp() {
     fi
 }
 
-# [ksec] base64 decode the values of a secret, namespace optional
-ksec () {
-        if [[ -n "$1" ]]
-        then
-                ns="$1"
-        else
-                ns=$(kubectl get ns | _inline_fzf | awk '{print $1}')
-        fi
-        secret=$(kubectl get secret -n "$ns" | _inline_fzf | awk '{print $1}')
-        kubectl get secret -n "$ns" "$secret" -o json | jq -r '.data | to_entries[] | "\(.key): \(.value | @base64d)"'
+#### CUSTOM TOBI
+# [kdebug] start debugging container (nicolaka/netshoot) in the current namespace
+kdebug() {
+    kcmd 'bash' 'nicolaka/netshoot'
 }
 
 # [k8c-cluster] extracts kubeconfig of user cluster and connects it in a new bash
 k8c-cluster () {
-	TMP_KUBECONFIG=$(mktemp) 
-	local cluster="$(kubectl get cluster | _inline_fzf | awk '{print $1}')" 
+	TMP_KUBECONFIG=$(mktemp)
+	local cluster="$(kubectl get cluster | _inline_fzf | awk '{print $1}')"
 	kubectl get secret admin-kubeconfig -n cluster-$cluster -o go-template='{{ index .data "kubeconfig" }}' | base64 -d > $TMP_KUBECONFIG
 	KUBECONFIG=$TMP_KUBECONFIG $SHELL
 }
