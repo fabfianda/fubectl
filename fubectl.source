@@ -335,3 +335,8 @@ khelp() {
     fi
 }
 
+#### CUSTOM TOBI
+# [kdebug] start debugging container (nicolaka/netshoot) in the current namespace
+kdebug() {
+    kcmd 'bash' 'nicolaka/netshoot'
+}
