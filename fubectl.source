@@ -251,6 +251,16 @@ konsole() {
     "spec": {
         "hostPID": true,
         "hostNetwork": true,
+        "tolerations": [
+            {
+                "operator": "Exists",
+                "effect": "NoSchedule"
+            },
+            {
+                "operator": "Exists",
+                "effect": "NoExecute"
+            }
+        ],
         "containers": [
             {
                 "name": "'$name'",
@@ -279,7 +289,7 @@ konsole() {
     }
 }
 '
-    kubectl run $name --namespace $ns --rm -it --image alpine --overrides="${overrides}"
+    kubectl run $name --namespace "$ns" --rm -it --image alpine --overrides="${overrides}"
 }
 
 # [ksec] decode a value from a secret
@@ -298,6 +308,15 @@ kinstall() {
 # [kupdate] Updates kubectl plugins
 kupdate() {
     kubectl krew upgrade
+}
+
+#### Kubermatic KKP specific
+# [k8c-cluster] Kubermatic KKP - extracts kubeconfig of user cluster and connects it in a new bash
+k8c-cluster () {
+	TMP_KUBECONFIG=$(mktemp)
+	local cluster="$(kubectl get cluster | _inline_fzf | awk '{print $1}')"
+	kubectl get secret admin-kubeconfig -n cluster-$cluster -o go-template='{{ index .data "kubeconfig" }}' | base64 -d > $TMP_KUBECONFIG
+	KUBECONFIG=$TMP_KUBECONFIG $SHELL
 }
 
 # [khelp] show this help message
